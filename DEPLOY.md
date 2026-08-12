@@ -62,6 +62,13 @@ labels:
   - "traefik.http.services.auraflow.loadbalancer.server.port=8080"
 ```
 
+`deploy.yml` re-downloads `docker-compose.prod.yml` from the repo (pinned
+to the deployed commit SHA) on every run before `pull`/`up -d`, so changes
+to this file — new labels, a different domain, etc. — take effect on the
+next push automatically. `docker compose pull` alone only refreshes the
+*image*, never this file, so without that sync step the VPS would keep
+running whatever compose config it happened to have on disk.
+
 ### DNS (Hostinger)
 
 Add an **A record** in Hostinger's hPanel → Domains → `autopilot-studio.com`

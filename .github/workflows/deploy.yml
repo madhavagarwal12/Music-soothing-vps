@@ -67,6 +67,12 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.VPS_DEPLOY_PATH }}
+            # Keep docker-compose.prod.yml in sync with the repo — `pull`
+            # only refreshes the image, not this file, so without this the
+            # VPS silently runs a stale compose config (labels, networks,
+            # etc.) after any change to the file itself.
+            curl -fsSL -o docker-compose.prod.yml \
+              https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/docker-compose.prod.yml
             # The GHCR package is public, so no docker login is needed to pull it.
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
