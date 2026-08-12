@@ -1,0 +1,43 @@
+# Alternative to Dockerfile: builds by cloning the git repo directly inside
+# the image, instead of using the local build context. Useful for building
+# straight on the VPS without needing to `git clone` the repo there first —
+# `docker build` (or `docker compose build`) alone is enough.
+#
+# Trade-off vs the GHCR/CI pipeline in .github/workflows/deploy.yml: every
+# deploy rebuilds from source on the VPS (slower, uses VPS CPU) instead of
+# pulling a prebuilt image (fast, built once in CI). Fine for a low-traffic
+# personal project; prefer the GHCR path for anything with real deploy
+# frequency or a resource-constrained VPS.
+#
+# The repo is public, so a plain anonymous HTTPS clone works — no
+# credentials or SSH agent forwarding needed.
+
+FROM node:20-alpine AS build
+
+ARG REPO_URL=https://github.com/madhavagarwal12/Music-soothing-vps.git
+ARG REPO_REF=main
+
+RUN apk add --no-cache git
+
+WORKDIR /app
+RUN git clone --branch "${REPO_REF}" --depth 1 "${REPO_URL}" .
+
+RUN npm ci
+RUN npm run build
+
+# --- Serve stage ---
+FROM nginx:1.27-alpine AS serve
+
+RUN apk add --no-cache curl \
+    && rm -rf /usr/share/nginx/html/* \
+    && rm /etc/nginx/conf.d/default.conf
+
+COPY --from=build /app/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://127.0.0.1:8080/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

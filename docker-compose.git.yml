@@ -1,0 +1,36 @@
+# Builds and runs AuraFlow by cloning the git repo inside the Docker build
+# (see Dockerfile.git) — no full local checkout needed on the VPS, no
+# GHCR/registry involved. Two files are all the VPS needs:
+#
+#   mkdir -p /opt/auraflow && cd /opt/auraflow
+#   curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/Dockerfile.git
+#   curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/docker-compose.git.yml
+#   docker compose -f docker-compose.git.yml up -d --build
+#
+# To redeploy after pushing new commits, rerun the same command — it
+# re-clones the latest of REPO_REF and rebuilds from scratch.
+
+services:
+  auraflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.git
+      args:
+        REPO_URL: ${REPO_URL:-https://github.com/madhavagarwal12/Music-soothing-vps.git}
+        REPO_REF: ${REPO_REF:-main}
+    image: auraflow:git
+    container_name: auraflow
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

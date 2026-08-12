@@ -73,6 +73,27 @@ IMAGE=ghcr.io/OWNER/REPO:sha-<previous-commit> docker compose -f docker-compose.
 Since this app has no database, rollback is just "redeploy the previous
 image" — no migration/data concerns.
 
+## 4b. Alternative: build directly from git (no GHCR)
+
+If you'd rather not set up CI/registry secrets at all, `Dockerfile.git` +
+`docker-compose.git.yml` clone this repo *inside* the Docker build, so the
+VPS only needs those two files — no `git clone` of the full repo, no GHCR,
+no GitHub Actions secrets:
+
+```bash
+mkdir -p /opt/auraflow && cd /opt/auraflow
+curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/Dockerfile.git
+curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/docker-compose.git.yml
+docker compose -f docker-compose.git.yml up -d --build
+```
+
+To redeploy after new commits, rerun the same `up -d --build` — it re-clones
+`main` and rebuilds from scratch. Simpler, but every deploy rebuilds on the
+VPS itself (slower, uses VPS CPU) instead of pulling a prebuilt image built
+once in CI. This only works because the repo is public — if you make it
+private again, `Dockerfile.git` will need credential wiring (SSH agent
+forwarding or a PAT passed as a BuildKit `--secret`) to clone.
+
 ## 5. Local verification
 
 ```bash
