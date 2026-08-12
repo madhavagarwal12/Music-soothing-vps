@@ -2,12 +2,15 @@
 # Unlike docker-compose.yml (local build), this pulls the prebuilt image
 # that CI already built and pushed to GHCR; the VPS never runs `npm`/`vite`.
 #
+# Routed through the existing Traefik instance (root-traefik-1) at
+# music.autopilot-studio.com, the same way helios/n8n are — Host-header
+# routing on 80/443, no separate host port needed since Traefik reaches
+# this container directly over the shared `app-network` Docker network.
+#
 # One-time VPS setup:
 #   1. mkdir -p /opt/auraflow && cd /opt/auraflow
-#   2. Copy this file there as docker-compose.prod.yml (scp, or `git clone`
-#      the repo and just use this path — either works, the VPS doesn't need
-#      the app source, only this file).
-#   3. cp .env.example .env   # adjust HOST_PORT / IMAGE if needed
+#   2. Copy this file there as docker-compose.prod.yml
+#   3. cp .env.example .env   # adjust IMAGE if needed
 #   4. docker compose -f docker-compose.prod.yml up -d
 #      (no `docker login` needed — the GHCR package is public)
 #
@@ -19,8 +22,6 @@ services:
     image: ${IMAGE:-ghcr.io/madhavagarwal12/music-soothing-vps:latest}
     container_name: auraflow
     restart: unless-stopped
-    ports:
-      - "${HOST_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -32,26 +33,22 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - app-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=app-network"
+      - "traefik.http.routers.auraflow.rule=Host(`music.autopilot-studio.com`)"
+      - "traefik.http.routers.auraflow.entrypoints=web,websecure"
+      - "traefik.http.routers.auraflow.tls=true"
+      - "traefik.http.routers.auraflow.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.auraflow.loadbalancer.server.port=8080"
 
-    # --- Reverse proxy wiring ---
-    # If your VPS runs Traefik and containers join it via a shared Docker
-    # network, uncomment the network + labels below (adjust the network name
-    # and Host() rule to match your setup) and you can drop the `ports:`
-    # block above since Traefik will reach the container directly.
-    #
-    # networks:
-    #   - proxy
-    # labels:
-    #   - "traefik.enable=true"
-    #   - "traefik.http.routers.auraflow.rule=Host(`your-domain.example`)"
-    #   - "traefik.http.routers.auraflow.entrypoints=websecure"
-    #   - "traefik.http.routers.auraflow.tls.certresolver=letsencrypt"
-    #   - "traefik.http.services.auraflow.loadbalancer.server.port=8080"
-    #
-    # If instead your VPS runs Nginx or Caddy as a separate (non-Docker-aware)
-    # reverse proxy, keep the `ports:` block above and just point that proxy
-    # at 127.0.0.1:${HOST_PORT:-8080} — see DEPLOY.md for example snippets.
+    # Uncomment if you also want to hit the container directly on the host
+    # (bypassing Traefik/TLS) for debugging — not needed for normal use.
+    # ports:
+    #   - "${HOST_PORT:-8080}:8080"
 
-# networks:
-#   proxy:
-#     external: true
+networks:
+  app-network:
+    external: true

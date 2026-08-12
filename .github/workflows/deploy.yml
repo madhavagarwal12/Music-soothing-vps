@@ -72,7 +72,7 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f
 
-      - name: Post-deploy smoke check
+      - name: Post-deploy smoke check (container-internal)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -82,4 +82,20 @@ jobs:
           script: |
             set -e
             sleep 5
-            curl -f http://127.0.0.1:${HOST_PORT:-8080}/health
+            # No host port is published (Traefik reaches the container over
+            # app-network directly), so check via docker exec instead of
+            # curling a host-bound port.
+            docker exec auraflow curl -f http://127.0.0.1:8080/health
+
+      - name: Post-deploy smoke check (public URL through Traefik)
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS https://music.autopilot-studio.com/ -o /dev/null; then
+              echo "music.autopilot-studio.com is reachable"
+              exit 0
+            fi
+            echo "Attempt $i: not reachable yet, retrying in 6s..."
+            sleep 6
+          done
+          echo "music.autopilot-studio.com did not become reachable in time" >&2
+          exit 1

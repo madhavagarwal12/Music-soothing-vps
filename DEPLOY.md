@@ -36,24 +36,46 @@ mkdir -p /opt/auraflow && cd /opt/auraflow
 curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/docker-compose.prod.yml
 cat > .env <<'EOF'
 IMAGE=ghcr.io/madhavagarwal12/music-soothing-vps:latest
-HOST_PORT=8080
 EOF
 docker compose -f docker-compose.prod.yml up -d
 ```
 
 No `docker login` needed — the package is public.
 
-### Reverse proxy
+### Reverse proxy (Traefik)
 
-`docker-compose.prod.yml` publishes the container on `HOST_PORT` (default
-`8080`). Point your existing reverse proxy at it:
+This VPS already runs Traefik (`root-traefik-1`) fronting other apps
+(`helios`, `n8n`) via Host-header routing on the shared `app-network`
+Docker network — `docker-compose.prod.yml` joins that same network and
+carries the matching labels, so `auraflow` publishes **no host port at
+all**; Traefik reaches it directly over `app-network` on its internal
+port 8080, exactly like `helios` reaches its container on port 3000.
 
-- **Traefik** (Docker-aware): uncomment the `networks:`/`labels:` block in
-  `docker-compose.prod.yml`, join the same external network your Traefik
-  instance uses, and drop the `ports:` block.
-- **Nginx**: add a `location`/`proxy_pass http://127.0.0.1:8080;` server
-  block (with your own TLS/domain config) on the host.
-- **Caddy**: `your-domain.example { reverse_proxy 127.0.0.1:8080 }`.
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.docker.network=app-network"
+  - "traefik.http.routers.auraflow.rule=Host(`music.autopilot-studio.com`)"
+  - "traefik.http.routers.auraflow.entrypoints=web,websecure"
+  - "traefik.http.routers.auraflow.tls=true"
+  - "traefik.http.routers.auraflow.tls.certresolver=mytlschallenge"
+  - "traefik.http.services.auraflow.loadbalancer.server.port=8080"
+```
+
+### DNS (Hostinger)
+
+Add an **A record** in Hostinger's hPanel → Domains → `autopilot-studio.com`
+→ DNS / Nameservers:
+
+| Type | Name | Points to | TTL |
+|---|---|---|---|
+| A | `music` | `69.62.79.214` | 300 (or default) |
+
+That's the same IP `test.autopilot-studio.com` already resolves to — this
+just adds a second A record for the `music` subdomain pointing at the
+same VPS. Once it propagates (usually a few minutes, sometimes longer),
+Traefik's `mytlschallenge` resolver will issue a Let's Encrypt cert for
+`music.autopilot-studio.com` automatically on first request.
 
 ## 3. Normal deploy flow
 
