@@ -1,0 +1,57 @@
+# Production compose file — used ON THE VPS ONLY.
+# Unlike docker-compose.yml (local build), this pulls the prebuilt image
+# that CI already built and pushed to GHCR; the VPS never runs `npm`/`vite`.
+#
+# One-time VPS setup:
+#   1. mkdir -p /opt/auraflow && cd /opt/auraflow
+#   2. Copy this file there as docker-compose.prod.yml (scp, or `git clone`
+#      the repo and just use this path — either works, the VPS doesn't need
+#      the app source, only this file).
+#   3. cp .env.example .env   # adjust HOST_PORT / IMAGE if needed
+#   4. docker login ghcr.io -u <github-username> -p <PAT-or-GITHUB_TOKEN>
+#   5. docker compose -f docker-compose.prod.yml up -d
+#
+# After that, CI's deploy.yml SSHes in and runs `pull` + `up -d` on every
+# push to main — see .github/workflows/deploy.yml.
+
+services:
+  auraflow:
+    image: ${IMAGE:-ghcr.io/OWNER/REPO:latest}
+    container_name: auraflow
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # --- Reverse proxy wiring ---
+    # If your VPS runs Traefik and containers join it via a shared Docker
+    # network, uncomment the network + labels below (adjust the network name
+    # and Host() rule to match your setup) and you can drop the `ports:`
+    # block above since Traefik will reach the container directly.
+    #
+    # networks:
+    #   - proxy
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.auraflow.rule=Host(`your-domain.example`)"
+    #   - "traefik.http.routers.auraflow.entrypoints=websecure"
+    #   - "traefik.http.routers.auraflow.tls.certresolver=letsencrypt"
+    #   - "traefik.http.services.auraflow.loadbalancer.server.port=8080"
+    #
+    # If instead your VPS runs Nginx or Caddy as a separate (non-Docker-aware)
+    # reverse proxy, keep the `ports:` block above and just point that proxy
+    # at 127.0.0.1:${HOST_PORT:-8080} — see DEPLOY.md for example snippets.
+
+# networks:
+#   proxy:
+#     external: true

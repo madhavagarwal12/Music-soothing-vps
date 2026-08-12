@@ -1,0 +1,21 @@
+services:
+  auraflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: auraflow:latest
+    container_name: auraflow
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,84 @@
+# Deploying AuraFlow
+
+Static frontend, packaged as a Docker image (nginx serving the Vite build). CI builds
+and pushes the image to GHCR on every merge to `main`, then SSHes into the VPS to pull
+and restart it.
+
+## 1. One-time GitHub setup
+
+1. Push this repo to GitHub.
+2. Under **Settings → Secrets and variables → Actions**, add:
+   | Secret | Value |
+   |---|---|
+   | `VPS_HOST` | VPS IP or hostname |
+   | `VPS_USER` | SSH user with docker permissions on the VPS |
+   | `VPS_SSH_KEY` | Private key (PEM) for that user — generate a dedicated deploy key, don't reuse your personal one |
+   | `VPS_PORT` | SSH port, only needed if not 22 |
+   | `VPS_DEPLOY_PATH` | Absolute path on the VPS containing `docker-compose.prod.yml` (e.g. `/opt/auraflow`) |
+
+   `GITHUB_TOKEN` is automatic — no need to add it; it's used both to push to
+   GHCR and (via SSH) to let the VPS pull the (public or private) image.
+3. Under **Settings → Actions → General → Workflow permissions**, make sure
+   "Read and write permissions" is enabled so the `GITHUB_TOKEN` can push to GHCR.
+4. Package visibility: by default GHCR images are private. Either make the
+   package public (Settings on the package itself), or make sure the VPS
+   `docker login ghcr.io` step in `deploy.yml` runs before every pull (it
+   already does).
+
+## 2. One-time VPS setup
+
+```bash
+mkdir -p /opt/auraflow && cd /opt/auraflow
+# Only docker-compose.prod.yml is needed here — the VPS never builds the app.
+curl -O https://raw.githubusercontent.com/OWNER/REPO/main/docker-compose.prod.yml
+curl -o .env https://raw.githubusercontent.com/OWNER/REPO/main/.env.example
+# edit .env: set IMAGE=ghcr.io/OWNER/REPO:latest and HOST_PORT if needed
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Replace `OWNER/REPO` with your actual GitHub path everywhere above, and in
+`.env` / `docker-compose.prod.yml`'s default `IMAGE` value.
+
+### Reverse proxy
+
+`docker-compose.prod.yml` publishes the container on `HOST_PORT` (default
+`8080`). Point your existing reverse proxy at it:
+
+- **Traefik** (Docker-aware): uncomment the `networks:`/`labels:` block in
+  `docker-compose.prod.yml`, join the same external network your Traefik
+  instance uses, and drop the `ports:` block.
+- **Nginx**: add a `location`/`proxy_pass http://127.0.0.1:8080;` server
+  block (with your own TLS/domain config) on the host.
+- **Caddy**: `your-domain.example { reverse_proxy 127.0.0.1:8080 }`.
+
+## 3. Normal deploy flow
+
+Merge to `main` → GitHub Actions runs `ci.yml` (lint, build, Docker build
+check) → on success, builds and pushes `ghcr.io/OWNER/REPO:latest` and
+`:sha-<commit>` → SSHes into the VPS, `docker compose pull && up -d`, then
+hits `/health`.
+
+## 4. Rollback
+
+Every image is tagged with both `latest` and the full commit SHA, so the
+previous build is never overwritten. To roll back:
+
+```bash
+ssh <user>@<vps>
+cd /opt/auraflow
+docker compose -f docker-compose.prod.yml pull  # or manually:
+IMAGE=ghcr.io/OWNER/REPO:sha-<previous-commit> docker compose -f docker-compose.prod.yml up -d
+```
+
+Since this app has no database, rollback is just "redeploy the previous
+image" — no migration/data concerns.
+
+## 5. Local verification
+
+```bash
+npm run lint
+npm run build
+docker build -t auraflow:local .
+docker run --rm -p 8080:8080 auraflow:local
+curl http://localhost:8080/health
+```
