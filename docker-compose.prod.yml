@@ -8,15 +8,15 @@
 #      the repo and just use this path — either works, the VPS doesn't need
 #      the app source, only this file).
 #   3. cp .env.example .env   # adjust HOST_PORT / IMAGE if needed
-#   4. docker login ghcr.io -u <github-username> -p <PAT-or-GITHUB_TOKEN>
-#   5. docker compose -f docker-compose.prod.yml up -d
+#   4. docker compose -f docker-compose.prod.yml up -d
+#      (no `docker login` needed — the GHCR package is public)
 #
 # After that, CI's deploy.yml SSHes in and runs `pull` + `up -d` on every
 # push to main — see .github/workflows/deploy.yml.
 
 services:
   auraflow:
-    image: ${IMAGE:-ghcr.io/OWNER/REPO:latest}
+    image: ${IMAGE:-ghcr.io/madhavagarwal12/music-soothing-vps:latest}
     container_name: auraflow
     restart: unless-stopped
     ports:

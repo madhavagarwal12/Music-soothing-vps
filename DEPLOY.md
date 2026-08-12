@@ -16,28 +16,32 @@ and restart it.
    | `VPS_PORT` | SSH port, only needed if not 22 |
    | `VPS_DEPLOY_PATH` | Absolute path on the VPS containing `docker-compose.prod.yml` (e.g. `/opt/auraflow`) |
 
-   `GITHUB_TOKEN` is automatic — no need to add it; it's used both to push to
-   GHCR and (via SSH) to let the VPS pull the (public or private) image.
+   `GITHUB_TOKEN` is automatic — no need to add it; it's used to push to GHCR
+   from CI. The VPS doesn't need any credentials to pull — see below.
 3. Under **Settings → Actions → General → Workflow permissions**, make sure
    "Read and write permissions" is enabled so the `GITHUB_TOKEN` can push to GHCR.
-4. Package visibility: by default GHCR images are private. Either make the
-   package public (Settings on the package itself), or make sure the VPS
-   `docker login ghcr.io` step in `deploy.yml` runs before every pull (it
-   already does).
+4. Package visibility: GHCR packages default to **private** even when the
+   repo is public, so the first push from CI creates a private package —
+   after that first push, go to the package's own Settings (from your
+   GitHub profile → Packages → music-soothing-vps → Package settings) and
+   change visibility to **public**. Once public, the VPS can `docker compose
+   pull` with no login/credentials at all (verified — anonymous `docker
+   pull ghcr.io/madhavagarwal12/music-soothing-vps:latest` works).
 
 ## 2. One-time VPS setup
 
 ```bash
 mkdir -p /opt/auraflow && cd /opt/auraflow
 # Only docker-compose.prod.yml is needed here — the VPS never builds the app.
-curl -O https://raw.githubusercontent.com/OWNER/REPO/main/docker-compose.prod.yml
-curl -o .env https://raw.githubusercontent.com/OWNER/REPO/main/.env.example
-# edit .env: set IMAGE=ghcr.io/OWNER/REPO:latest and HOST_PORT if needed
+curl -O https://raw.githubusercontent.com/madhavagarwal12/Music-soothing-vps/main/docker-compose.prod.yml
+cat > .env <<'EOF'
+IMAGE=ghcr.io/madhavagarwal12/music-soothing-vps:latest
+HOST_PORT=8080
+EOF
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Replace `OWNER/REPO` with your actual GitHub path everywhere above, and in
-`.env` / `docker-compose.prod.yml`'s default `IMAGE` value.
+No `docker login` needed — the package is public.
 
 ### Reverse proxy
 
@@ -54,8 +58,8 @@ Replace `OWNER/REPO` with your actual GitHub path everywhere above, and in
 ## 3. Normal deploy flow
 
 Merge to `main` → GitHub Actions runs `ci.yml` (lint, build, Docker build
-check) → on success, builds and pushes `ghcr.io/OWNER/REPO:latest` and
-`:sha-<commit>` → SSHes into the VPS, `docker compose pull && up -d`, then
+check) → on success, builds and pushes `ghcr.io/madhavagarwal12/music-soothing-vps:latest`
+and `:sha-<commit>` → SSHes into the VPS, `docker compose pull && up -d`, then
 hits `/health`.
 
 ## 4. Rollback
@@ -67,7 +71,7 @@ previous build is never overwritten. To roll back:
 ssh <user>@<vps>
 cd /opt/auraflow
 docker compose -f docker-compose.prod.yml pull  # or manually:
-IMAGE=ghcr.io/OWNER/REPO:sha-<previous-commit> docker compose -f docker-compose.prod.yml up -d
+IMAGE=ghcr.io/madhavagarwal12/music-soothing-vps:sha-<previous-commit> docker compose -f docker-compose.prod.yml up -d
 ```
 
 Since this app has no database, rollback is just "redeploy the previous
